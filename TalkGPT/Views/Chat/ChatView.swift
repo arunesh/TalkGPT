@@ -3,39 +3,318 @@
 //  TalkGPT
 //
 //  Created by TalkGPT on 2025-11-19.
-//  Phase 2 Implementation
+//  Phase 2 Implementation - Complete
 //
 
 import SwiftUI
 
 struct ChatView: View {
     @StateObject private var viewModel = ChatViewModel()
+    @StateObject private var documentsViewModel = DocumentsViewModel()
 
     var body: some View {
         NavigationView {
-            VStack {
-                Spacer()
+            VStack(spacing: 0) {
+                // Document selector bar
+                if !viewModel.selectedDocuments.isEmpty {
+                    documentSelectorBar
+                }
 
-                VStack(spacing: 20) {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.system(size: 70))
-                        .foregroundColor(.gray)
+                // Messages list
+                if viewModel.messages.isEmpty {
+                    emptyStateView
+                } else {
+                    messagesList
+                }
 
-                    Text("Chat Coming Soon")
-                        .font(.title2)
-                        .fontWeight(.semibold)
+                // Input bar
+                inputBar
+            }
+            .navigationTitle(viewModel.currentConversation?.title ?? "Chat")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { viewModel.showConversationList = true }) {
+                        Image(systemName: "list.bullet")
+                    }
+                }
 
-                    Text("Phase 2 will bring LLM-powered chat with your documents")
-                        .font(.body)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button(action: { viewModel.showDocumentSelector = true }) {
+                            Label("Select Documents", systemImage: "doc.text")
+                        }
+
+                        Button(action: { viewModel.showModelSettings = true }) {
+                            Label("Model Settings", systemImage: "slider.horizontal.3")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive, action: {
+                            viewModel.clearConversation()
+                        }) {
+                            Label("Clear Conversation", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+            .sheet(isPresented: $viewModel.showDocumentSelector) {
+                DocumentSelectorSheet(
+                    viewModel: viewModel,
+                    documentsViewModel: documentsViewModel
+                )
+            }
+            .sheet(isPresented: $viewModel.showConversationList) {
+                ConversationListSheet(viewModel: viewModel)
+            }
+            .sheet(isPresented: $viewModel.showModelSettings) {
+                ModelSettingsSheet(viewModel: viewModel)
+            }
+            .alert("Error", isPresented: $viewModel.showError) {
+                Button("OK") {
+                    viewModel.clearError()
+                }
+            } message: {
+                if let errorMessage = viewModel.errorMessage {
+                    Text(errorMessage)
+                }
+            }
+            .onAppear {
+                viewModel.initialize()
+                documentsViewModel.loadDocuments()
+            }
+        }
+    }
+
+    // MARK: - Subviews
+
+    private var emptyStateView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "bubble.left.and.bubble.right.fill")
+                .font(.system(size: 70))
+                .foregroundColor(.blue.opacity(0.5))
+
+            Text("Start a Conversation")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text("Ask questions about your documents or chat freely")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+
+            if !viewModel.isModelLoaded {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundColor(.orange)
+
+                    Text("No model loaded")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Text("In production, tap Settings to load an LLM model")
+                        .font(.caption)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                 }
+                .padding()
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(10)
+                .padding()
+            }
 
+            Button(action: { viewModel.showDocumentSelector = true }) {
+                Label("Select Documents to Chat", systemImage: "doc.badge.plus")
+                    .font(.headline)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var documentSelectorBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(viewModel.selectedDocuments) { document in
+                    DocumentChip(
+                        document: document,
+                        onRemove: {
+                            viewModel.deselectDocument(document)
+                        }
+                    )
+                }
+
+                Button(action: { viewModel.showDocumentSelector = true }) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(.blue)
+                        .padding(8)
+                        .background(Color.blue.opacity(0.1))
+                        .clipShape(Circle())
+                }
+            }
+            .padding()
+        }
+        .background(Color(.systemGray6))
+    }
+
+    private var messagesList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
+                        VStack(spacing: 4) {
+                            if viewModel.shouldShowTimestamp(for: index) {
+                                Text(viewModel.formattedTimestamp(message.timestamp))
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .padding(.vertical, 8)
+                            }
+
+                            MessageRow(
+                                message: message,
+                                onCopy: { viewModel.copyMessage(message) },
+                                onRegenerate: index == viewModel.messages.count - 1 && message.role == .assistant ? {
+                                    viewModel.regenerateLastResponse()
+                                } : nil
+                            )
+                            .id(message.id)
+                        }
+                    }
+
+                    // Streaming indicator
+                    if viewModel.isStreaming {
+                        HStack {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                            Text("Generating...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 8)
+                    }
+                }
+                .padding()
+            }
+            .onChange(of: viewModel.messages.count) { _ in
+                if let lastMessage = viewModel.messages.last {
+                    withAnimation {
+                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                    }
+                }
+            }
+        }
+    }
+
+    private var inputBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+
+            HStack(spacing: 12) {
+                TextField("Ask a question...", text: $viewModel.currentInput, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .padding(12)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(20)
+                    .lineLimit(1...5)
+                    .disabled(viewModel.isGenerating)
+
+                if viewModel.isGenerating {
+                    Button(action: { viewModel.stopGeneration() }) {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundColor(.red)
+                    }
+                } else {
+                    Button(action: { viewModel.sendMessage() }) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundColor(viewModel.currentInput.isEmpty ? .gray : .blue)
+                    }
+                    .disabled(viewModel.currentInput.isEmpty)
+                }
+            }
+            .padding()
+        }
+        .background(Color(.systemBackground))
+    }
+}
+
+// MARK: - Supporting Views
+
+struct MessageRow: View {
+    let message: ChatMessage
+    let onCopy: () -> Void
+    let onRegenerate: (() -> Void)?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            if message.role == .user {
                 Spacer()
             }
-            .navigationTitle("Chat")
+
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
+                Text(message.content)
+                    .font(.body)
+                    .padding(12)
+                    .background(message.role == .user ? Color.blue : Color(.systemGray5))
+                    .foregroundColor(message.role == .user ? .white : .primary)
+                    .cornerRadius(16)
+                    .textSelection(.enabled)
+
+                HStack(spacing: 16) {
+                    Button(action: onCopy) {
+                        Label("Copy", systemImage: "doc.on.doc")
+                            .font(.caption)
+                    }
+
+                    if let regenerate = onRegenerate {
+                        Button(action: regenerate) {
+                            Label("Regenerate", systemImage: "arrow.clockwise")
+                                .font(.caption)
+                        }
+                    }
+                }
+                .foregroundColor(.secondary)
+            }
+
+            if message.role == .assistant {
+                Spacer()
+            }
         }
+    }
+}
+
+struct DocumentChip: View {
+    let document: Document
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "doc.text.fill")
+                .font(.caption)
+
+            Text(document.name)
+                .font(.caption)
+                .lineLimit(1)
+
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.blue.opacity(0.15))
+        .foregroundColor(.blue)
+        .cornerRadius(16)
     }
 }
 

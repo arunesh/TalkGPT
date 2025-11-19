@@ -10,10 +10,14 @@ import SwiftUI
 struct SettingsView: View {
     @State private var storageUsed: Int64 = 0
     @State private var documentCount: Int = 0
+    @State private var conversationCount: Int = 0
     @State private var showingClearDataAlert = false
+    @State private var showingClearConversationsAlert = false
 
     private let fileManager = FileManagerHelper.shared
     private let storageService = StorageService()
+    private let conversationService = ConversationService()
+    private let llmManager = LLMManager.shared
 
     var body: some View {
         NavigationView {
@@ -34,6 +38,19 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                     }
 
+                    HStack {
+                        Text("Conversations")
+                        Spacer()
+                        Text("\(conversationCount)")
+                            .foregroundColor(.secondary)
+                    }
+
+                    Button(role: .destructive, action: {
+                        showingClearConversationsAlert = true
+                    }) {
+                        Text("Clear Conversations")
+                    }
+
                     Button(role: .destructive, action: {
                         showingClearDataAlert = true
                     }) {
@@ -46,22 +63,40 @@ struct SettingsView: View {
                 // Model Settings Section (Phase 2)
                 Section {
                     HStack {
-                        Text("LLM Model")
+                        Text("Status")
                         Spacer()
-                        Text("Not Loaded")
-                            .foregroundColor(.secondary)
+                        Text(llmManager.isModelLoaded ? "Loaded" : "Not Loaded")
+                            .foregroundColor(llmManager.isModelLoaded ? .green : .red)
                     }
 
-                    HStack {
-                        Text("Temperature")
-                        Spacer()
-                        Text("0.7")
-                            .foregroundColor(.secondary)
+                    if llmManager.isModelLoaded {
+                        HStack {
+                            Text("Model")
+                            Spacer()
+                            Text(llmManager.modelInfo.name)
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Size")
+                            Spacer()
+                            Text(llmManager.modelInfo.size)
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Quantization")
+                            Spacer()
+                            Text(llmManager.modelInfo.quantization)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 } header: {
-                    Text("Model Settings")
+                    Text("LLM Model")
                 } footer: {
-                    Text("Model settings will be available in Phase 2")
+                    if !llmManager.isModelLoaded {
+                        Text("Model is running in demonstration mode. In production, you would load a GGUF model file (Gemma 2B or Phi-3 Mini recommended).")
+                    }
                 }
 
                 // About Section
@@ -69,14 +104,14 @@ struct SettingsView: View {
                     HStack {
                         Text("Version")
                         Spacer()
-                        Text("1.0.0 (Phase 1)")
+                        Text("1.0.0 (Phase 2)")
                             .foregroundColor(.secondary)
                     }
 
                     HStack {
                         Text("Build")
                         Spacer()
-                        Text("001")
+                        Text("002")
                             .foregroundColor(.secondary)
                     }
 
@@ -99,6 +134,14 @@ struct SettingsView: View {
             } message: {
                 Text("This will delete all documents and data. This action cannot be undone.")
             }
+            .alert("Clear Conversations", isPresented: $showingClearConversationsAlert) {
+                Button("Cancel", role: .cancel) {}
+                Button("Clear", role: .destructive) {
+                    clearConversations()
+                }
+            } message: {
+                Text("This will delete all conversations and messages. Documents will not be affected.")
+            }
         }
     }
 
@@ -118,8 +161,11 @@ struct SettingsView: View {
         do {
             let documents = try await storageService.fetchAllDocuments()
             documentCount = documents.count
+
+            let stats = try await conversationService.getConversationStats()
+            conversationCount = stats.count
         } catch {
-            print("Error loading document count: \(error)")
+            print("Error loading storage info: \(error)")
         }
     }
 
@@ -127,11 +173,23 @@ struct SettingsView: View {
         Task {
             do {
                 try await storageService.deleteAllData()
+                try await conversationService.deleteAllConversations()
                 try fileManager.clearAllData()
 
                 await loadStorageInfo()
             } catch {
                 print("Error clearing data: \(error)")
+            }
+        }
+    }
+
+    private func clearConversations() {
+        Task {
+            do {
+                try await conversationService.deleteAllConversations()
+                await loadStorageInfo()
+            } catch {
+                print("Error clearing conversations: \(error)")
             }
         }
     }
