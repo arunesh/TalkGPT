@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var conversationCount: Int = 0
     @State private var showingClearDataAlert = false
     @State private var showingClearConversationsAlert = false
+    @State private var showingBackendConfig = false
 
     private let fileManager = FileManagerHelper.shared
     private let storageService = StorageService()
@@ -60,16 +61,32 @@ struct SettingsView: View {
                     Text("Storage")
                 }
 
-                // Model Settings Section (Phase 2)
+                // Backend Settings Section
                 Section {
+                    Button(action: { showingBackendConfig = true }) {
+                        HStack {
+                            Text("Configure Backend")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
                     HStack {
                         Text("Status")
                         Spacer()
-                        Text(llmManager.isModelLoaded ? "Loaded" : "Not Loaded")
-                            .foregroundColor(llmManager.isModelLoaded ? .green : .red)
+                        Text(llmManager.isModelLoaded ? "Configured" : "Not Configured")
+                            .foregroundColor(llmManager.isModelLoaded ? .green : .orange)
                     }
 
                     if llmManager.isModelLoaded {
+                        HStack {
+                            Text("Backend")
+                            Spacer()
+                            Text(llmManager.getConfiguration().selectedBackend.displayName)
+                                .foregroundColor(.secondary)
+                        }
+
                         HStack {
                             Text("Model")
                             Spacer()
@@ -78,24 +95,19 @@ struct SettingsView: View {
                         }
 
                         HStack {
-                            Text("Size")
+                            Text("Context Length")
                             Spacer()
-                            Text(llmManager.modelInfo.size)
-                                .foregroundColor(.secondary)
-                        }
-
-                        HStack {
-                            Text("Quantization")
-                            Spacer()
-                            Text(llmManager.modelInfo.quantization)
+                            Text("\(llmManager.modelInfo.contextLength)")
                                 .foregroundColor(.secondary)
                         }
                     }
                 } header: {
-                    Text("LLM Model")
+                    Text("LLM Backend")
                 } footer: {
                     if !llmManager.isModelLoaded {
-                        Text("Model is running in demonstration mode. In production, you would load a GGUF model file (Gemma 2B or Phi-3 Mini recommended).")
+                        Text("Configure your API keys for OpenAI (GPT-4o) or Anthropic (Claude Sonnet 4.5). API keys can be set via environment variables or in the configuration screen.")
+                    } else {
+                        Text("Using cloud API - no local storage required")
                     }
                 }
 
@@ -141,6 +153,9 @@ struct SettingsView: View {
                 }
             } message: {
                 Text("This will delete all conversations and messages. Documents will not be affected.")
+            }
+            .sheet(isPresented: $showingBackendConfig) {
+                BackendConfigurationView()
             }
         }
     }
