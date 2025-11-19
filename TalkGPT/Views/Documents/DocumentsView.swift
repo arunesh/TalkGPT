@@ -13,6 +13,7 @@ struct DocumentsView: View {
     @State private var showingImportOptions = false
     @State private var showingDeleteConfirmation = false
     @State private var showingSearch = false
+    @State private var showingSynthesis = false
     @State private var documentToDelete: Document?
 
     var body: some View {
@@ -32,8 +33,14 @@ struct DocumentsView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if !viewModel.documents.isEmpty {
-                        Button(action: { showingSearch = true }) {
-                            Image(systemName: "magnifyingglass")
+                        HStack(spacing: 16) {
+                            Button(action: { showingSearch = true }) {
+                                Image(systemName: "magnifyingglass")
+                            }
+
+                            Button(action: { showingSynthesis = true }) {
+                                Image(systemName: "sparkles.rectangle.stack")
+                            }
                         }
                     }
                 }
@@ -52,6 +59,9 @@ struct DocumentsView: View {
             }
             .sheet(isPresented: $showingSearch) {
                 DocumentSearchView()
+            }
+            .sheet(isPresented: $showingSynthesis) {
+                DocumentSynthesisView(documentsViewModel: viewModel)
             }
             .confirmationDialog("Import Document", isPresented: $showingImportOptions) {
                 if viewModel.isDocumentScannerAvailable {

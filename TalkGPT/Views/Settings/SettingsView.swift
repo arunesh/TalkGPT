@@ -13,14 +13,18 @@ struct SettingsView: View {
     @State private var conversationCount: Int = 0
     @State private var showingClearDataAlert = false
     @State private var showingClearConversationsAlert = false
+    @State private var showingClearVectorStoreAlert = false
     @State private var showingBackendConfig = false
     @State private var usageStats: UsageStatistics?
+    @State private var vectorStats: VectorStoreStats?
 
     private let fileManager = FileManagerHelper.shared
     private let storageService = StorageService()
     private let conversationService = ConversationService()
     private let llmManager = LLMManager.shared
     private let statsService = UsageStatisticsService.shared
+    private let vectorStore = VectorStore.shared
+    private let semanticSearch = SemanticSearchService.shared
 
     var body: some View {
         NavigationView {
@@ -119,6 +123,52 @@ struct SettingsView: View {
                     }
                 }
 
+                // Vector Search Section
+                Section {
+                    if let stats = vectorStats {
+                        HStack {
+                            Text("Indexed Documents")
+                            Spacer()
+                            Text("\(stats.uniqueDocuments)")
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Text Chunks")
+                            Spacer()
+                            Text("\(stats.totalChunks)")
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Avg Chunks/Doc")
+                            Spacer()
+                            Text(String(format: "%.1f", stats.averageChunksPerDocument))
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Index Size")
+                            Spacer()
+                            Text(stats.formattedSize)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Button(role: .destructive, action: {
+                            showingClearVectorStoreAlert = true
+                        }) {
+                            Text("Clear Search Index")
+                        }
+                    } else {
+                        Text("Loading vector search stats...")
+                            .foregroundColor(.secondary)
+                    }
+                } header: {
+                    Text("Semantic Search")
+                } footer: {
+                    Text("Semantic search uses AI embeddings to find relevant content by meaning, not just keywords.")
+                }
+
                 // Backend Settings Section
                 Section {
                     Button(action: { showingBackendConfig = true }) {
@@ -212,6 +262,14 @@ struct SettingsView: View {
             } message: {
                 Text("This will delete all conversations and messages. Documents will not be affected.")
             }
+            .alert("Clear Search Index", isPresented: $showingClearVectorStoreAlert) {
+                Button("Cancel", role: .cancel) {}
+                Button("Clear", role: .destructive) {
+                    clearVectorStore()
+                }
+            } message: {
+                Text("This will clear the semantic search index. Documents will not be affected, but you may need to wait for re-indexing.")
+            }
             .sheet(isPresented: $showingBackendConfig) {
                 BackendConfigurationView()
             }
@@ -240,6 +298,9 @@ struct SettingsView: View {
 
             // Load usage statistics
             usageStats = statsService.getStatistics()
+
+            // Load vector search statistics
+            vectorStats = vectorStore.getStats()
         } catch {
             print("Error loading storage info: \(error)")
         }
@@ -268,6 +329,12 @@ struct SettingsView: View {
                 print("Error clearing conversations: \(error)")
             }
         }
+    }
+
+    private func clearVectorStore() {
+        vectorStore.clearAll()
+        vectorStats = vectorStore.getStats()
+        HapticManager.shared.success()
     }
 }
 

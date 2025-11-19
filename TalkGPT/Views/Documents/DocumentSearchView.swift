@@ -35,6 +35,17 @@ struct DocumentSearchView: View {
                 .padding()
                 .background(Color(.systemGray6))
 
+                // Search mode picker
+                Picker("Search Mode", selection: $viewModel.searchMode) {
+                    ForEach(SearchMode.allCases) { mode in
+                        Label(mode.rawValue, systemImage: mode.icon)
+                            .tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+
                 Divider()
 
                 // Results
@@ -111,13 +122,22 @@ struct DocumentSearchView: View {
                         .foregroundColor(.secondary)
 
                     Spacer()
+
+                    if viewModel.searchMode == .hybrid || viewModel.searchMode == .semantic {
+                        Text(viewModel.searchMode.rawValue)
+                            .font(.caption2)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.blue.opacity(0.2))
+                            .cornerRadius(8)
+                    }
                 }
                 .padding(.horizontal)
                 .padding(.top)
 
                 // Results
                 ForEach(viewModel.searchResults) { result in
-                    SearchResultRow(
+                    HybridSearchResultRow(
                         result: result,
                         searchQuery: viewModel.searchQuery,
                         onTap: {
@@ -189,16 +209,92 @@ struct SearchResultRow: View {
     }
 }
 
+// MARK: - Hybrid Search Result Row
+
+struct HybridSearchResultRow: View {
+    let result: HybridSearchResult
+    let searchQuery: String
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 8) {
+                // Document name, page, and relevance
+                HStack {
+                    Image(systemName: "doc.text")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+
+                    Text(result.documentName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+
+                    Text("• Page \(result.pageNumber)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    // Relevance badge
+                    Text("\(result.relevanceScore)%")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(result.relevanceColor).opacity(0.2))
+                        .foregroundColor(Color(result.relevanceColor))
+                        .cornerRadius(4)
+                }
+
+                // Context with highlighted match
+                Text(highlightedContext)
+                    .font(.caption)
+                    .lineLimit(3)
+                    .foregroundColor(.primary)
+
+                // Relevance label for semantic/hybrid
+                if result.searchMode == .semantic || result.searchMode == .hybrid {
+                    Text(result.relevanceLabel)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color(.systemGray4), lineWidth: 1)
+            )
+        }
+        .padding(.horizontal)
+    }
+
+    private var highlightedContext: AttributedString {
+        var attributed = AttributedString(result.text)
+
+        // Highlight the search query
+        if let range = attributed.range(of: searchQuery, options: .caseInsensitive) {
+            attributed[range].backgroundColor = .yellow.opacity(0.3)
+            attributed[range].font = .caption.bold()
+        }
+
+        return attributed
+    }
+}
+
 // MARK: - ViewModel
 
 @MainActor
 class DocumentSearchViewModel: ObservableObject {
     @Published var searchQuery: String = ""
-    @Published var searchResults: [SearchResult] = []
+    @Published var searchResults: [HybridSearchResult] = []
     @Published var isSearching: Bool = false
-    @Published var selectedResult: SearchResult?
+    @Published var selectedResult: HybridSearchResult?
+    @Published var searchMode: SearchMode = .hybrid
 
-    private let searchService = SearchService()
+    private let semanticSearchService = SemanticSearchService.shared
     private var searchTask: Task<Void, Never>?
 
     init() {
@@ -207,6 +303,16 @@ class DocumentSearchViewModel: ObservableObject {
             .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
             .sink { [weak self] query in
                 self?.performSearch(query: query)
+            }
+            .store(in: &cancellables)
+
+        // Re-search when mode changes
+        $searchMode
+            .dropFirst() // Skip initial value
+            .sink { [weak self] _ in
+                if let query = self?.searchQuery, !query.isEmpty {
+                    self?.performSearch(query: query)
+                }
             }
             .store(in: &cancellables)
     }
@@ -226,7 +332,11 @@ class DocumentSearchViewModel: ObservableObject {
 
         searchTask = Task {
             do {
-                let results = try await searchService.searchInDocuments(query: query, documentIds: nil)
+                let results = try await semanticSearchService.search(
+                    query: query,
+                    documentIds: nil,
+                    searchMode: searchMode
+                )
 
                 if !Task.isCancelled {
                     searchResults = results

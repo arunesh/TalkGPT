@@ -167,6 +167,9 @@ class DocumentService: DocumentServiceProtocol {
         // Track statistics
         UsageStatisticsService.shared.recordDocumentProcessed()
 
+        // Index for semantic search
+        try? await SemanticSearchService.shared.indexDocument(document, pages: pages)
+
         return document
     }
 
@@ -238,6 +241,9 @@ class DocumentService: DocumentServiceProtocol {
 
         // Track statistics
         UsageStatisticsService.shared.recordDocumentProcessed()
+
+        // Index for semantic search
+        try? await SemanticSearchService.shared.indexDocument(document, pages: pages)
 
         return document
     }
