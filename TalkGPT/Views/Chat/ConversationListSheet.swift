@@ -12,6 +12,10 @@ struct ConversationListSheet: View {
     @ObservedObject var viewModel: ChatViewModel
     @Environment(\.dismiss) private var dismiss
 
+    @State private var conversationToRename: Conversation?
+    @State private var newTitle: String = ""
+    @State private var showingRenameAlert = false
+
     var body: some View {
         NavigationView {
             List {
@@ -42,6 +46,11 @@ struct ConversationListSheet: View {
                             },
                             onDelete: {
                                 viewModel.deleteConversation(conversation)
+                            },
+                            onRename: {
+                                conversationToRename = conversation
+                                newTitle = conversation.title
+                                showingRenameAlert = true
                             }
                         )
                     }
@@ -67,6 +76,23 @@ struct ConversationListSheet: View {
                     }
                 }
             }
+            .alert("Rename Conversation", isPresented: $showingRenameAlert) {
+                TextField("Conversation Title", text: $newTitle)
+                Button("Cancel", role: .cancel) {
+                    conversationToRename = nil
+                    newTitle = ""
+                }
+                Button("Rename") {
+                    if let conversation = conversationToRename {
+                        viewModel.renameConversation(conversation, newTitle: newTitle)
+                    }
+                    conversationToRename = nil
+                    newTitle = ""
+                }
+                .disabled(newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } message: {
+                Text("Enter a new title for this conversation")
+            }
         }
     }
 }
@@ -76,6 +102,7 @@ struct ConversationRow: View {
     let isCurrent: Bool
     let onSelect: () -> Void
     let onDelete: () -> Void
+    let onRename: () -> Void
 
     var body: some View {
         Button(action: onSelect) {
@@ -103,6 +130,12 @@ struct ConversationRow: View {
             Button(role: .destructive, action: onDelete) {
                 Label("Delete", systemImage: "trash")
             }
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            Button(action: onRename) {
+                Label("Rename", systemImage: "pencil")
+            }
+            .tint(.blue)
         }
     }
 }

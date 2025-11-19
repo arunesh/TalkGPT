@@ -12,6 +12,7 @@ struct DocumentsView: View {
     @StateObject private var viewModel = DocumentsViewModel()
     @State private var showingImportOptions = false
     @State private var showingDeleteConfirmation = false
+    @State private var showingSearch = false
     @State private var documentToDelete: Document?
 
     var body: some View {
@@ -29,6 +30,14 @@ struct DocumentsView: View {
             }
             .navigationTitle("My Documents")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if !viewModel.documents.isEmpty {
+                        Button(action: { showingSearch = true }) {
+                            Image(systemName: "magnifyingglass")
+                        }
+                    }
+                }
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showingImportOptions = true }) {
                         Image(systemName: "plus")
@@ -40,6 +49,9 @@ struct DocumentsView: View {
             }
             .sheet(isPresented: $viewModel.showFilePicker) {
                 DocumentPickerView(viewModel: viewModel)
+            }
+            .sheet(isPresented: $showingSearch) {
+                DocumentSearchView()
             }
             .confirmationDialog("Import Document", isPresented: $showingImportOptions) {
                 if viewModel.isDocumentScannerAvailable {

@@ -27,6 +27,7 @@ class ChatViewModel: ObservableObject {
     @Published var showDocumentSelector: Bool = false
     @Published var showConversationList: Bool = false
     @Published var showModelSettings: Bool = false
+    @Published var showExportSheet: Bool = false
 
     @Published var modelParameters: ModelParameters = .default
     @Published var isModelLoaded: Bool = false
@@ -111,6 +112,12 @@ class ChatViewModel: ObservableObject {
                 // Save user message
                 try await conversationService.saveMessage(userMessage, to: conversationId)
 
+                // Track statistics
+                UsageStatisticsService.shared.recordMessageSent()
+
+                // Haptic feedback
+                HapticManager.shared.lightImpact()
+
                 // Generate response
                 await generateResponse(for: messageText, conversationId: conversationId)
 
@@ -170,6 +177,9 @@ class ChatViewModel: ObservableObject {
 
                     try await conversationService.saveMessage(finalMessage, to: conversationId)
 
+                    // Haptic feedback for completion
+                    HapticManager.shared.success()
+
                     // Update conversation title if it's the first exchange
                     await updateConversationTitle(fullResponse)
                 }
@@ -219,12 +229,14 @@ class ChatViewModel: ObservableObject {
     func selectDocument(_ document: Document) {
         if !selectedDocuments.contains(where: { $0.id == document.id }) {
             selectedDocuments.append(document)
+            HapticManager.shared.selection()
         }
     }
 
     /// Deselects a document
     func deselectDocument(_ document: Document) {
         selectedDocuments.removeAll { $0.id == document.id }
+        HapticManager.shared.selection()
     }
 
     /// Toggles document selection
@@ -251,6 +263,12 @@ class ChatViewModel: ObservableObject {
             conversations.insert(conversation, at: 0)
             messages.removeAll()
             selectedDocuments.removeAll()
+
+            // Track statistics
+            UsageStatisticsService.shared.recordConversationCreated()
+
+            // Haptic feedback
+            HapticManager.shared.lightImpact()
         } catch {
             handleError(error)
         }
@@ -290,10 +308,44 @@ class ChatViewModel: ObservableObject {
                 try await conversationService.deleteConversation(conversation.id)
                 conversations.removeAll { $0.id == conversation.id }
 
+                // Haptic feedback
+                HapticManager.shared.mediumImpact()
+
                 // If deleted current conversation, create new one
                 if currentConversation?.id == conversation.id {
                     await createNewConversation()
                 }
+            } catch {
+                handleError(error)
+            }
+        }
+    }
+
+    /// Renames a conversation
+    func renameConversation(_ conversation: Conversation, newTitle: String) {
+        Task {
+            do {
+                let trimmedTitle = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedTitle.isEmpty else { return }
+
+                var updatedConversation = conversation
+                updatedConversation.title = trimmedTitle
+                updatedConversation.lastModified = Date()
+
+                try await conversationService.updateConversation(updatedConversation)
+
+                // Update local state
+                if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+                    conversations[index] = updatedConversation
+                }
+
+                // Update current conversation if it's the one being renamed
+                if currentConversation?.id == conversation.id {
+                    currentConversation = updatedConversation
+                }
+
+                // Haptic feedback
+                HapticManager.shared.lightImpact()
             } catch {
                 handleError(error)
             }
@@ -305,6 +357,24 @@ class ChatViewModel: ObservableObject {
         messages.removeAll()
         selectedDocuments.removeAll()
         currentInput = ""
+    }
+
+    /// Exports the current conversation in the specified format
+    func exportConversation(format: ExportFormat) async throws -> String {
+        guard let conversation = currentConversation else {
+            throw ChatError.noConversation
+        }
+
+        let exportService = ExportService.shared
+
+        switch format {
+        case .text:
+            return exportService.exportAsText(conversation: conversation, messages: messages)
+        case .markdown:
+            return exportService.exportAsMarkdown(conversation: conversation, messages: messages)
+        case .json:
+            return try exportService.exportAsJSON(conversation: conversation, messages: messages)
+        }
     }
 
     /// Updates conversation title based on first exchange
@@ -361,6 +431,28 @@ class ChatViewModel: ObservableObject {
     func copyMessage(_ message: ChatMessage) {
         #if os(iOS)
         UIPasteboard.general.string = message.content
+        HapticManager.shared.lightImpact()
+        #endif
+    }
+
+    /// Shares a message via system share sheet
+    func shareMessage(_ message: ChatMessage) {
+        let exportService = ExportService.shared
+        let content = exportService.exportMessage(message)
+
+        #if os(iOS)
+        // Create temporary file for sharing
+        let filename = "message_\(message.timestamp.formatted(date: .numeric, time: .omitted).replacingOccurrences(of: "/", with: "-")).txt"
+
+        if let url = exportService.createShareableFile(content: content, filename: filename, format: .text) {
+            // Present share sheet
+            let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootViewController = windowScene.windows.first?.rootViewController {
+                rootViewController.present(activityVC, animated: true)
+            }
+        }
         #endif
     }
 

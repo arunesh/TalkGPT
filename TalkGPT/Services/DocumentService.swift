@@ -164,6 +164,9 @@ class DocumentService: DocumentServiceProtocol {
         // Save to storage
         try await storageService.saveDocument(document, pages: pages)
 
+        // Track statistics
+        UsageStatisticsService.shared.recordDocumentProcessed()
+
         return document
     }
 
@@ -232,6 +235,9 @@ class DocumentService: DocumentServiceProtocol {
 
         // Save to storage
         try await storageService.saveDocument(document, pages: pages)
+
+        // Track statistics
+        UsageStatisticsService.shared.recordDocumentProcessed()
 
         return document
     }

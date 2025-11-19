@@ -14,11 +14,13 @@ struct SettingsView: View {
     @State private var showingClearDataAlert = false
     @State private var showingClearConversationsAlert = false
     @State private var showingBackendConfig = false
+    @State private var usageStats: UsageStatistics?
 
     private let fileManager = FileManagerHelper.shared
     private let storageService = StorageService()
     private let conversationService = ConversationService()
     private let llmManager = LLMManager.shared
+    private let statsService = UsageStatisticsService.shared
 
     var body: some View {
         NavigationView {
@@ -59,6 +61,62 @@ struct SettingsView: View {
                     }
                 } header: {
                     Text("Storage")
+                }
+
+                // Usage Statistics Section
+                Section {
+                    if let stats = usageStats {
+                        HStack {
+                            Text("App Launches")
+                            Spacer()
+                            Text("\(stats.appLaunchCount)")
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Total Messages")
+                            Spacer()
+                            Text("\(stats.totalMessages)")
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Total Searches")
+                            Spacer()
+                            Text("\(stats.totalSearches)")
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Total Exports")
+                            Spacer()
+                            Text("\(stats.totalExports)")
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Days Active")
+                            Spacer()
+                            Text("\(stats.daysSinceFirstLaunch)")
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Avg. Messages/Day")
+                            Spacer()
+                            Text(String(format: "%.1f", stats.averageMessagesPerDay))
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Text("Loading statistics...")
+                            .foregroundColor(.secondary)
+                    }
+                } header: {
+                    Text("Usage Statistics")
+                } footer: {
+                    if let stats = usageStats {
+                        Text("Member since \(stats.firstLaunchDate.formatted(date: .long, time: .omitted))")
+                    }
                 }
 
                 // Backend Settings Section
@@ -179,6 +237,9 @@ struct SettingsView: View {
 
             let stats = try await conversationService.getConversationStats()
             conversationCount = stats.count
+
+            // Load usage statistics
+            usageStats = statsService.getStatistics()
         } catch {
             print("Error loading storage info: \(error)")
         }

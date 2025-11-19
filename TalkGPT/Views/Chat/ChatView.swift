@@ -51,6 +51,13 @@ struct ChatView: View {
 
                         Divider()
 
+                        Button(action: { viewModel.showExportSheet = true }) {
+                            Label("Export Conversation", systemImage: "square.and.arrow.up")
+                        }
+                        .disabled(viewModel.messages.isEmpty)
+
+                        Divider()
+
                         Button(role: .destructive, action: {
                             viewModel.clearConversation()
                         }) {
@@ -72,6 +79,9 @@ struct ChatView: View {
             }
             .sheet(isPresented: $viewModel.showModelSettings) {
                 ModelSettingsSheet(viewModel: viewModel)
+            }
+            .sheet(isPresented: $viewModel.showExportSheet) {
+                ExportConversationSheet(viewModel: viewModel)
             }
             .alert("Error", isPresented: $viewModel.showError) {
                 Button("OK") {
@@ -181,11 +191,16 @@ struct ChatView: View {
                             MessageRow(
                                 message: message,
                                 onCopy: { viewModel.copyMessage(message) },
+                                onShare: { viewModel.shareMessage(message) },
                                 onRegenerate: index == viewModel.messages.count - 1 && message.role == .assistant ? {
                                     viewModel.regenerateLastResponse()
                                 } : nil
                             )
                             .id(message.id)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: message.role == .user ? .trailing : .leading).combined(with: .opacity),
+                                removal: .opacity
+                            ))
                         }
                     }
 
@@ -252,7 +267,10 @@ struct ChatView: View {
 struct MessageRow: View {
     let message: ChatMessage
     let onCopy: () -> Void
+    let onShare: () -> Void
     let onRegenerate: (() -> Void)?
+
+    @State private var showShareSheet = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -269,9 +287,29 @@ struct MessageRow: View {
                     .cornerRadius(16)
                     .textSelection(.enabled)
 
+                // Citations (for assistant messages)
+                if !message.citations.isEmpty && message.role == .assistant {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Sources:")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+
+                        ForEach(message.citations) { citation in
+                            CitationView(citation: citation)
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                }
+
                 HStack(spacing: 16) {
                     Button(action: onCopy) {
                         Label("Copy", systemImage: "doc.on.doc")
+                            .font(.caption)
+                    }
+
+                    Button(action: onShare) {
+                        Label("Share", systemImage: "square.and.arrow.up")
                             .font(.caption)
                     }
 
@@ -289,6 +327,30 @@ struct MessageRow: View {
                 Spacer()
             }
         }
+    }
+}
+
+struct CitationView: View {
+    let citation: Citation
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "doc.text")
+                .font(.caption2)
+                .foregroundColor(.blue)
+
+            Text(citation.documentName)
+                .font(.caption2)
+                .foregroundColor(.primary)
+
+            Text("• Page \(citation.pageNumber)")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.blue.opacity(0.1))
+        .cornerRadius(8)
     }
 }
 
